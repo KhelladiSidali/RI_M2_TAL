@@ -1,0 +1,90 @@
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
+import numpy as np
+import pandas as pd
+import tkinter as tk
+from tkinter import messagebox
+
+# Charger le corpus
+corpus_path = r"C:\Users\ELMOHIT\Desktop\RI_M2_TAL-main\corpus.txt"
+with open(corpus_path, 'r', encoding='utf-8') as file:
+    corpus = file.readlines()
+
+# Requête initiale
+query = "information retrieval algorithm"
+
+# Calculer TF-IDF
+vectorizer = TfidfVectorizer()
+tfidf_matrix = vectorizer.fit_transform(corpus)
+query_vector = vectorizer.transform([query])
+similarities = cosine_similarity(query_vector, tfidf_matrix).flatten()
+
+# Fonction Rocchio
+def rocchio_update(Q0, relevant_docs, non_relevant_docs, alpha=1, beta=0.75, gamma=0.15):
+    centroid_relevant = np.mean(relevant_docs, axis=0) if relevant_docs.size > 0 else np.zeros_like(Q0)
+    centroid_non_relevant = np.mean(non_relevant_docs, axis=0) if non_relevant_docs.size > 0 else np.zeros_like(Q0)
+    Q1 = alpha * Q0 + beta * centroid_relevant - gamma * centroid_non_relevant
+    return Q1
+
+# Interface graphique avec tkinter
+def launch_interface():
+    root = tk.Tk()
+    root.title("Sélection des documents pertinents")
+    root.geometry("600x400")
+
+    # Liste pour stocker l'état des cases à cocher
+    checkbox_vars = [tk.BooleanVar() for _ in range(len(corpus))]
+
+    # Afficher les documents avec des cases à cocher
+    tk.Label(root, text="Sélectionnez les documents pertinents :").pack(pady=10)
+    frame = tk.Frame(root)
+    frame.pack(fill=tk.BOTH, expand=True)
+    canvas = tk.Canvas(frame)
+    scrollbar = tk.Scrollbar(frame, orient=tk.VERTICAL, command=canvas.yview)
+    scrollable_frame = tk.Frame(canvas)
+
+    scrollable_frame.bind(
+        "<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+    )
+    canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+    canvas.configure(yscrollcommand=scrollbar.set)
+
+    canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+    scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+    for i, doc in enumerate(corpus):
+        tk.Checkbutton(
+            scrollable_frame,
+            text=f"Doc {i + 1}: {doc.strip()} (Sim: {similarities[i]:.3f})",
+            variable=checkbox_vars[i],
+        ).pack(anchor="w")
+
+    # Fonction appelée lorsque l'utilisateur confirme la sélection
+    def on_confirm():
+        selected_indices = [i for i, var in enumerate(checkbox_vars) if var.get()]
+        if not selected_indices:
+            messagebox.showwarning("Attention", "Veuillez sélectionner au moins un document pertinent.")
+            return
+
+        # Séparer les documents pertinents et non pertinents
+        relevant_docs = tfidf_matrix[selected_indices].toarray()
+        non_relevant_indices = [i for i in range(len(corpus)) if i not in selected_indices]
+        non_relevant_docs = tfidf_matrix[non_relevant_indices].toarray()
+
+        # Mise à jour de la requête avec Rocchio
+        updated_query_vector = rocchio_update(
+            query_vector.toarray()[0], relevant_docs, non_relevant_docs
+        )
+        updated_query = " ".join(
+            vectorizer.inverse_transform(updated_query_vector.reshape(1, -1))[0]
+        )
+
+        # Afficher les résultats
+        messagebox.showinfo("Requête Mise à Jour", f"Nouvelle requête :\n{updated_query}")
+
+    # Bouton pour confirmer la sélection
+    tk.Button(root, text="Confirmer la sélection", command=on_confirm).pack(pady=20)
+    root.mainloop()
+
+# Lancer l'interface
+launch_interface()
